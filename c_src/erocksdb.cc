@@ -20,7 +20,9 @@
 //
 // -------------------------------------------------------------------
 
-#include <syslog.h>
+#ifndef _WIN32 
+	#include <syslog.h>
+#endif // _WIN32
 
 #include <new>
 #include <set>
@@ -311,7 +313,9 @@ struct ErocksdbOptions
 
     void Dump()
     {
+#ifndef _WIN32
         syslog(LOG_ERR, "         m_ErocksdbThreads: %d\n", m_ErocksdbThreads);
+#endif // _WIN32
     }   // Dump
 };  // struct ErocksdbOptions
 

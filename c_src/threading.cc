@@ -23,6 +23,10 @@
 #include <sstream>
 #include <stdexcept>
 
+#ifdef _WIN32
+	#include<Windows.h>
+#endif
+
 #ifndef INCL_THREADING_H
     #include "threading.h"
 #endif
@@ -82,7 +86,11 @@ erocksdb_thread_pool::FindWaitingThread(
      // pick "random" place in thread list.  hopefully
      //  list size is prime number.
      pool_size=threads.size();
+#ifdef _WIN32
+     start = (size_t)GetCurrentThreadId() % pool_size;
+#else // _WIN32
      start=(size_t)pthread_self() % pool_size;
+#endif	 
      index=start;
 
      do

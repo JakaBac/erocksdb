@@ -11,3 +11,13 @@ c_src/snappy*.tar.gz
 c_src/system
 *~
 .rebar
+/c_src/.vs/erocksdb/v15
+/c_src/Debug
+/c_src/x64
+/src/erocksdb.dll
+/src/snappy64.dll
+/bin
+/c_src/erocksdb.sln
+/c_src/erocksdb.vcxproj
+/c_src/erocksdb.vcxproj.filters
+/c_src/erocksdb.vcxproj.user
