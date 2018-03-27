@@ -5,14 +5,23 @@ erocksdb
 
 Erlang bindings to [RocksDB](https://github.com/facebook/rocksdb) datastore.
 
+This fork enhances portability using C++11 atomics and synchronization. This enables compilation on Windows (MSVC)
+
 ## Build Information
 
 * "erocksdb" uses the [rebar](https://github.com/rebar/rebar) build system. Makefile so that simply running "make" at the top level should work.
 * "erocksdb" requires Erlang R16B03-1 or later.
 
+The fork is work in progress, the build scripts were not modified so building on Windows involves manual operations:
+1. Build rocksdb (in any way)
+2. Make a VS solution file, tweak the include and lib folders to match your setup
+3. Build erocksdb.dll
+4. Build the Erlang beam files
+
 ## Status
 
-Passed all the tests derived from [eleveldb](https://github.com/basho/eleveldb)
+Limited testing on Windows (built with MSVC 2017).
+Tested with [mnesia_eleveldb](https://github.com/klarna/mnesia_eleveldb). Used instead of [basho’s eleveldb](https://github.com/basho/eleveldb) backend. 
 
 ## Versioning
 
