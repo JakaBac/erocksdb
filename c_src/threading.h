@@ -24,10 +24,8 @@
 
 #include <deque>
 #include <vector>
-
-#ifndef INCL_MUTEX_H
-    #include "mutex.h"
-#endif
+#include <mutex>
+#include <atomic>
 
 #ifndef INCL_EROCKSDB_H
     #include "erocksdb.h"
@@ -59,13 +57,13 @@ protected:
 
 private:
     thread_pool_t  threads;
-    erocksdb::Mutex threads_lock;       // protect resizing of the thread pool
-    erocksdb::Mutex thread_resize_pool_mutex;
+    std::mutex threads_lock;       // protect resizing of the thread pool
+    std::mutex thread_resize_pool_mutex;
 
     work_queue_t   work_queue;
     ErlNifCond*    work_queue_pending; // flags job present in the work queue
     ErlNifMutex*   work_queue_lock;    // protects access to work_queue
-    volatile size_t work_queue_atomic;   //!< atomic size to parallel work_queue.size().
+    std::atomic<size_t> work_queue_atomic;   //!< atomic size to parallel work_queue.size().
 
     volatile bool  shutdown;           // should we stop threads and shut down?
 

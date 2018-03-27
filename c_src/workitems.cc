@@ -106,7 +106,7 @@ WorkTask::~WorkTask()
     // this is likely overkill in the present code, but seemed
     //  important at one time and leaving for safety
     env_ptr=local_env_;
-    if (compare_and_swap(&local_env_, env_ptr, (ErlNifEnv *)NULL)
+    if (compare_and_swap(local_env_, env_ptr, (ErlNifEnv *)NULL)
         && NULL!=env_ptr)
     {
         enif_free_env(env_ptr);
@@ -216,7 +216,7 @@ MoveTask::operator()()
 
 
     // who got back first, us or the erlang loop
-    if (compare_and_swap(&m_ItrWrap->m_HandoffAtomic, 0, 1))
+    if (compare_and_swap(m_ItrWrap->m_HandoffAtomic, 0u, 1u))
     {
         // this is prefetch of next iteration.  It returned faster than actual
         //  request to retrieve it.  Stop and wait for erlang to catch up.

@@ -49,21 +49,18 @@ void *erocksdb_write_thread_worker(void *args);
  */
 struct ThreadData
 {
-    ErlNifTid * m_ErlTid;                //!< erlang handle for this thread
-    volatile uint32_t m_Available;       //!< 1 if thread waiting, using standard type for atomic operation
-    class erocksdb_thread_pool & m_Pool; //!< parent pool object
+    ErlNifTid * m_ErlTid;                       //!< erlang handle for this thread
+    std::atomic<uint32_t> m_Available;          //!< 1 if thread waiting, using standard type for atomic operation
+    class erocksdb_thread_pool & m_Pool;        //!< parent pool object
     volatile erocksdb::WorkTask * m_DirectWork; //!< work passed direct to thread
 
-    pthread_mutex_t m_Mutex;             //!< mutex for condition variable
-    pthread_cond_t m_Condition;          //!< condition for thread waiting
+    std::mutex m_Mutex;                         //!< mutex for condition variable
+    std::condition_variable m_Condition;        //!< condition for thread waiting
 
 
     ThreadData(class erocksdb_thread_pool & Pool)
     : m_ErlTid(NULL), m_Available(0), m_Pool(Pool), m_DirectWork(NULL)
     {
-        pthread_mutex_init(&m_Mutex, NULL);
-        pthread_cond_init(&m_Condition, NULL);
-
         return;
     }   // ThreadData
 
@@ -100,7 +97,7 @@ erocksdb_thread_pool::FindWaitingThread(
          {
              // perform expensive compare and swap to potentially
              //  claim worker thread (this is an exclusive claim to the worker)
-             ret_flag = erocksdb::compare_and_swap(&threads[index]->m_Available, 1, 0);
+             ret_flag = erocksdb::compare_and_swap(threads[index]->m_Available, 1u, 0u);
 
              // the compare/swap only succeeds if worker thread is sitting on
              //  pthread_cond_wait ... or is about to be there but is holding
@@ -112,10 +109,10 @@ erocksdb_thread_pool::FindWaitingThread(
                  //  this code says it is not.  using broadcast instead
                  //  of signal to cover one other race condition
                  //  that should never happen with single thread waiting.
-                 pthread_mutex_lock(&threads[index]->m_Mutex);
+                 std::unique_lock<std::mutex> lk(threads[index]->m_Mutex);
                  threads[index]->m_DirectWork=work;
-                 pthread_cond_broadcast(&threads[index]->m_Condition);
-                 pthread_mutex_unlock(&threads[index]->m_Mutex);
+                 threads[index]->m_Condition.notify_all();
+                 lk.unlock();
              }   // if
          }   // if
 
@@ -147,7 +144,7 @@ erocksdb_thread_pool::FindWaitingThread(
          {
              // no waiting threads, put on backlog queue
              lock();
-             erocksdb::inc_and_fetch(&work_queue_atomic);
+             ++work_queue_atomic;
              work_queue.push_back(item);
              unlock();
 
@@ -169,7 +166,7 @@ erocksdb_thread_pool::FindWaitingThread(
   // not clear that this works or is testable
  bool erocksdb_thread_pool::resize_thread_pool(const size_t n)
  {
-     erocksdb::MutexLock l(thread_resize_pool_mutex);
+    std::lock_guard<std::mutex> l(thread_resize_pool_mutex);
 
     if(0 == n)
      return false;
@@ -219,7 +216,7 @@ erocksdb_thread_pool::~erocksdb_thread_pool()
 //  may not work at this time ...
 bool erocksdb_thread_pool::grow_thread_pool(const size_t nthreads)
 {
-    erocksdb::MutexLock l(threads_lock);
+    std::lock_guard<std::mutex> l(threads_lock);
     ThreadData * new_thread;
 
     if(0 >= nthreads)
@@ -290,7 +287,7 @@ bool erocksdb_thread_pool::drain_thread_pool()
     shutdown = true;
     enif_cond_broadcast(work_queue_pending);
 
-    erocksdb::MutexLock l(threads_lock);
+    std::lock_guard<std::mutex> l(threads_lock);
 #if 0
     while(!threads.empty())
     {
@@ -363,7 +360,7 @@ void *erocksdb_write_thread_worker(void *args)
                 {
                     submission=h.work_queue.front();
                     h.work_queue.pop_front();
-                    erocksdb::dec_and_fetch(&h.work_queue_atomic);
+                    --(h.work_queue_atomic);
                 }   // if
 
                 h.unlock();
@@ -393,22 +390,22 @@ void *erocksdb_write_thread_worker(void *args)
         //  (but retest queue before sleep due to race condition)
         else
         {
-            pthread_mutex_lock(&tdata.m_Mutex);
+            std::unique_lock<std::mutex> lk(tdata.m_Mutex);
             tdata.m_DirectWork=NULL; // safety
 
             // only wait if we are really sure no work pending
             if (0==h.work_queue_atomic)
 	    {
                 // yes, thread going to wait. set available now.
-	        tdata.m_Available=1;
-                pthread_cond_wait(&tdata.m_Condition, &tdata.m_Mutex);
+                tdata.m_Available=1;
+                tdata.m_Condition.wait(lk);
 	    }    // if
 
             tdata.m_Available=0;    // safety
             submission=(erocksdb::WorkTask *)tdata.m_DirectWork; // NULL is valid
             tdata.m_DirectWork=NULL;// safety
 
-            pthread_mutex_unlock(&tdata.m_Mutex);
+            lk.unlock();
         }   // else
     }   // while
 

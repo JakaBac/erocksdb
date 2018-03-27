@@ -56,7 +56,7 @@ uint32_t
 RefObject::RefInc()
 {
 
-    return(erocksdb::inc_and_fetch(&m_RefCount));
+    return ++m_RefCount;
 
 }   // RefObject::RefInc
 
@@ -66,7 +66,7 @@ RefObject::RefDec()
 {
     uint32_t current_refs;
 
-    current_refs=erocksdb::dec_and_fetch(&m_RefCount);
+    current_refs = --m_RefCount;
     if (0==current_refs)
         delete this;
 
@@ -82,13 +82,8 @@ RefObject::RefDec()
 ErlRefObject::ErlRefObject()
     : m_CloseRequested(0)
 {
-    pthread_mutexattr_t attr;
-
-    pthread_mutexattr_init(&attr);
-    pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
-    pthread_mutex_init(&m_CloseMutex, &attr);
-    pthread_cond_init(&m_CloseCond, NULL);
-    pthread_mutexattr_destroy(&attr);
+    m_CloseMutex = new std::mutex();
+    m_CloseCond = new std::condition_variable();
 
     return;
 
@@ -98,10 +93,10 @@ ErlRefObject::ErlRefObject()
 ErlRefObject::~ErlRefObject()
 {
 
-    pthread_mutex_lock(&m_CloseMutex);
+    std::unique_lock<std::mutex> lk(*m_CloseMutex);
     m_CloseRequested=3;
-    pthread_cond_broadcast(&m_CloseCond);
-    pthread_mutex_unlock(&m_CloseMutex);
+    m_CloseCond->notify_all();
+    lk.unlock();
 
     // DO NOT DESTROY m_CloseMutex or m_CloseCond here
 
@@ -117,8 +112,8 @@ ErlRefObject::InitiateCloseRequest(
     ret_flag=false;
 
     // special handling since destructor may have been called
-    if (NULL!=Object && 0==Object->m_CloseRequested)
-        ret_flag=compare_and_swap(&Object->m_CloseRequested, 0, 1);
+    if (NULL != Object && 0 == Object->m_CloseRequested)
+        ret_flag=compare_and_swap(Object->m_CloseRequested, 0u, 1u);
 
     // vtable is still good, this thread is initiating close
     //   ask object to clean-up
@@ -145,18 +140,18 @@ ErlRefObject::AwaitCloseAndDestructor(
         // quick test if any work pending
         if (3!=Object->m_CloseRequested)
         {
-            pthread_mutex_lock(&Object->m_CloseMutex);
+            std::unique_lock<std::mutex> lk(*(Object->m_CloseMutex));
 
             // retest after mutex helc
             while (3!=Object->m_CloseRequested)
             {
-                pthread_cond_wait(&Object->m_CloseCond, &Object->m_CloseMutex);
+                Object->m_CloseCond->wait(lk);
             }   // while
-            pthread_mutex_unlock(&Object->m_CloseMutex);
+            lk.unlock();
         }   // if
 
-        pthread_mutex_destroy(&Object->m_CloseMutex);
-        pthread_cond_destroy(&Object->m_CloseCond);
+        delete Object->m_CloseMutex;
+        delete Object->m_CloseCond;
     }   // if
 
     return;
@@ -169,11 +164,10 @@ ErlRefObject::RefDec()
 {
     uint32_t cur_count;
 
-    cur_count=erocksdb::dec_and_fetch(&m_RefCount);
-
+    cur_count = --m_RefCount;
     // this the last active after close requested?
     //  (atomic swap should be unnecessary ... but going for safety)
-    if (0==cur_count && compare_and_swap(&m_CloseRequested, 1, 2))
+    if (0==cur_count && compare_and_swap(m_CloseRequested, 1u, 2u))
     {
         // deconstruct, but let erlang deallocate memory later
         this->~ErlRefObject();
@@ -319,7 +313,7 @@ DbObject::Shutdown()
 
         // lock the ItrList
         {
-            MutexLock lock(m_ItrMutex);
+            std::lock_guard<std::mutex> lock(m_ItrMutex);
 
             if (!m_ItrList.empty())
             {
@@ -345,7 +339,7 @@ DbObject::Shutdown()
 
         // lock the SnapshotList
         {
-            MutexLock lock(m_SnapshotMutex);
+            std::lock_guard<std::mutex> lock(m_SnapshotMutex);
 
             if (!m_SnapshotList.empty())
             {
@@ -374,7 +368,7 @@ void
 DbObject::AddReference(
     ItrObject * ItrPtr)
 {
-    MutexLock lock(m_ItrMutex);
+    std::lock_guard<std::mutex> lock(m_ItrMutex);
 
     m_ItrList.push_back(ItrPtr);
 
@@ -387,7 +381,7 @@ void
 DbObject::RemoveReference(
     ItrObject * ItrPtr)
 {
-    MutexLock lock(m_ItrMutex);
+    std::lock_guard<std::mutex> lock(m_ItrMutex);
 
     m_ItrList.remove(ItrPtr);
 
@@ -399,7 +393,7 @@ void
 DbObject::AddSnapshotReference(
     SnapshotObject * SnapshotPtr)
 {
-    MutexLock lock(m_SnapshotMutex);
+    std::lock_guard<std::mutex> lock(m_SnapshotMutex);
 
     m_SnapshotList.push_back(SnapshotPtr);
 
@@ -412,7 +406,7 @@ void
 DbObject::RemoveSnapshotReference(
     SnapshotObject * SnapshotPtr)
 {
-    MutexLock lock(m_SnapshotMutex);
+    std::lock_guard<std::mutex> lock(m_SnapshotMutex);
 
     m_SnapshotList.remove(SnapshotPtr);
 
@@ -697,7 +691,7 @@ ItrObject::ReleaseReuseMove()
     // move pointer off ItrObject first, then decrement ...
     //  otherwise there is potential for infinite loop
     ptr=(MoveTask *)reuse_move;
-    if (compare_and_swap(&reuse_move, ptr, (MoveTask *)NULL)
+    if (compare_and_swap(reuse_move, ptr, (MoveTask *)NULL)
         && NULL!=ptr)
     {
         ptr->RefDec();

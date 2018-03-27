@@ -1347,7 +1347,7 @@ async_iterator_move(
     // case #2
     // before we launch a background job for "next iteration", see if there is a
     //  prefetch waiting for us
-    else if (erocksdb::compare_and_swap(&itr_ptr->m_Iter->m_HandoffAtomic, 0, 1))
+    else if (erocksdb::compare_and_swap(itr_ptr->m_Iter->m_HandoffAtomic, 0u, 1u))
     {
         // nope, no prefetch ... await a message to erlang queue
         ret_term = enif_make_copy(env, itr_ptr->m_Iter->itr_ref);

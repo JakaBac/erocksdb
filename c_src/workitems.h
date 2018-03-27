@@ -29,11 +29,6 @@
 #include "rocksdb/write_batch.h"
 #include "rocksdb/utilities/checkpoint.h"
 
-
-#ifndef INCL_MUTEX_H
-    #include "mutex.h"
-#endif
-
 #ifndef __WORK_RESULT_HPP
     #include "work_result.hpp"
 #endif
@@ -64,7 +59,7 @@ public:
 protected:
     ReferencePtr<DbObject> m_DbPtr;             //!< access to database, and holds reference
 
-    ErlNifEnv      *local_env_;
+    std::atomic<ErlNifEnv*> local_env_;
     ERL_NIF_TERM   caller_ref_term;
     ERL_NIF_TERM   caller_pid_term;
     bool           terms_set;

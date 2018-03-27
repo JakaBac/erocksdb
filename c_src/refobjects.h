@@ -25,6 +25,8 @@
 
 #include <stdint.h>
 #include <list>
+#include <mutex>
+#include <atomic>
 
 #include "rocksdb/db.h"
 #include "rocksdb/write_batch.h"
@@ -53,7 +55,7 @@ class RefObject
 public:
 
 protected:
-    volatile uint32_t m_RefCount;     //!< simple count of reference, auto delete at zero
+    std::atomic<uint32_t> m_RefCount;     //!< simple count of reference, auto delete at zero
 
 public:
     RefObject();
@@ -80,12 +82,12 @@ public:
     // these member objects are public to simplify
     //  access by statics and external APIs
     //  (yes, wrapper functions would be welcome)
-    volatile uint32_t m_CloseRequested;  // 1 once api close called, 2 once thread starts destructor, 3 destructor done
+    std::atomic<uint32_t> m_CloseRequested;        // 1 once api close called, 2 once thread starts destructor, 3 destructor done
 
     // DO NOT USE CONTAINER OBJECTS
     //  ... these must be live after destructor called
-    pthread_mutex_t m_CloseMutex;        //!< for erlang forced close
-    pthread_cond_t  m_CloseCond;         //!< for erlang forced close
+    std::mutex *m_CloseMutex;                     //!< for erlang forced close
+    std::condition_variable *m_CloseCond;         //!< for erlang forced close
 
 protected:
 
@@ -178,9 +180,9 @@ public:
 
     rocksdb::Options *m_DbOptions;
 
-    Mutex m_ItrMutex;                         //!< mutex protecting m_ItrList
-    Mutex m_SnapshotMutex;                    //!< mutext protecting m_SnapshotList
-    std::list<class ItrObject *> m_ItrList;   //!< ItrObjects holding ref count to this
+    std::mutex m_ItrMutex;                         //!< mutex protecting m_ItrList
+    std::mutex m_SnapshotMutex;                    //!< mutext protecting m_SnapshotList
+    std::list<class ItrObject *> m_ItrList;        //!< ItrObjects holding ref count to this
     std::list<class SnapshotObject *> m_SnapshotList;
 
 protected:
@@ -228,7 +230,7 @@ public:
 
     ReferencePtr<DbObject> m_DbPtr;
 
-    Mutex m_ItrMutex;                         //!< mutex protecting m_ItrList
+    //Mutex m_ItrMutex;                       //!< mutex protecting m_ItrList -- NOT REALLY USED?
     std::list<class ItrObject *> m_ItrList;   //!< ItrObjects holding ref count to this
 
 protected:
@@ -268,7 +270,7 @@ class RocksIteratorWrapper : public RefObject
 public:
     ReferencePtr<DbObject> m_DbPtr;           //!< need to keep db open for delete of this object
     rocksdb::Iterator * m_Iterator;
-    volatile uint32_t m_HandoffAtomic;        //!< matthew's atomic foreground/background prefetch flag.
+    std::atomic<uint32_t> m_HandoffAtomic;        //!< matthew's atomic foreground/background prefetch flag.
     bool m_KeysOnly;                          //!< only return key values
     bool m_PrefetchStarted;                   //!< true after first prefetch command
 
@@ -320,7 +322,7 @@ public:
     bool keys_only;
     rocksdb::ReadOptions * m_ReadOptions;
 
-    volatile class MoveTask * reuse_move;//!< iterator work object that is reused instead of lots malloc/free
+    std::atomic<class MoveTask*> reuse_move;//!< iterator work object that is reused instead of lots malloc/free
 
     ReferencePtr<DbObject> m_DbPtr;
 
